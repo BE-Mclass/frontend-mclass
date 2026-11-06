@@ -1,14 +1,24 @@
-const BASE_URL = import.meta.env.VITE_API_URL ?? "";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
 const TOKEN_KEY = "mclass_token";
 const USER_KEY = "mclass_user";
 
+export function getAuthToken() {
+  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
+}
+
+export function clearAuthStorage() {
+  for (const store of [localStorage, sessionStorage]) {
+    store.removeItem(TOKEN_KEY);
+    store.removeItem(USER_KEY);
+  }
+}
+
 export const tokenStore = {
-  get: () => localStorage.getItem(TOKEN_KEY) ?? sessionStorage.getItem(TOKEN_KEY),
+  get: getAuthToken,
   getUser() {
     const raw = localStorage.getItem(USER_KEY) ?? sessionStorage.getItem(USER_KEY);
     try { return raw ? JSON.parse(raw) : null; } catch { return null; }
   },
-  // remember = true → tetap login setelah browser ditutup
   save(token, user, remember) {
     this.clear();
     const store = remember ? localStorage : sessionStorage;
@@ -20,10 +30,7 @@ export const tokenStore = {
     store.setItem(USER_KEY, JSON.stringify(user));
   },
   clear() {
-    for (const s of [localStorage, sessionStorage]) {
-      s.removeItem(TOKEN_KEY);
-      s.removeItem(USER_KEY);
-    }
+    clearAuthStorage();
   },
 };
 
@@ -35,35 +42,57 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path, { method = "GET", body, auth = true } = {}) {
-  const headers = { "Content-Type": "application/json" };
-  const token = tokenStore.get();
-  if (auth && token) headers.Authorization = `Bearer ${token}`;
+export async function apiFetch(endpoint, options = {}, auth = true) {
+  const token = getAuthToken();
+  const headers = new Headers(options.headers);
 
-  let res;
-  try {
-    res = await fetch(`${BASE_URL}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new ApiError(0, "Tidak dapat terhubung ke server.");
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (auth && token) {
+    headers.set("Authorization", "Bearer " + token);
   }
 
-  const data = res.status === 204 ? null : await res.json().catch(() => null);
+  const baseUrl = API_BASE_URL.replace(/\/+$/, "");
+  const normalizedEndpoint = baseUrl.endsWith("/api") && endpoint.startsWith("/api/")
+    ? endpoint.slice(4)
+    : endpoint;
+  const response = await fetch(`${baseUrl}${normalizedEndpoint.startsWith("/") ? "" : "/"}${normalizedEndpoint}`, {
+    ...options,
+    headers,
+  });
+  const result = await response.json().catch(() => null);
 
-  if (!res.ok) {
-    // sesi habis / token dicabut → paksa ke login
-    if (res.status === 401 && auth) {
+  if (!response.ok) {
+    if (response.status === 401 && auth && endpoint !== "/auth/web/login") {
       tokenStore.clear();
-      window.location.assign("/login");
+      window.location.href = "/login";
+    }
+
+    const error = result && typeof result === "object"
+      ? { ...result, status: response.status }
+      : { message: "Terjadi kesalahan.", status: response.status };
+    throw error;
+  }
+
+  return result;
+}
+
+export async function api(path, { method = "GET", body, auth = true } = {}) {
+  try {
+    return await apiFetch(path, {
+      method,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    }, auth);
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof TypeError) {
+      throw new ApiError(0, "Tidak dapat terhubung ke server.");
     }
     throw new ApiError(
-      res.status,
-      data?.message ?? "Terjadi kesalahan.",
-      data?.errors ?? null,
+      error?.status ?? 0,
+      error?.message ?? "Terjadi kesalahan.",
+      error?.errors ?? null,
     );
   }
-  return data;
 }

@@ -51,6 +51,12 @@ export default function Sidebar({ isOpen, onClose }) {
   const { user, logout } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
 
+  const handleLogout = async () => {
+    await logout();
+    setShowLogout(false);
+    navigate("/login", { replace: true });
+  };
+
   return (
     <>
       {/* Backdrop (Hanya muncul di mobile saat sidebar terbuka) */}
@@ -154,11 +160,7 @@ export default function Sidebar({ isOpen, onClose }) {
       <LogoutModal
         isOpen={showLogout}
         onClose={() => setShowLogout(false)}
-        onConfirm={async () => {
-          await logout();
-          setShowLogout(false);
-          navigate("/login", { replace: true });
-        }}
+        onConfirm={handleLogout}
       />
     </>
   );

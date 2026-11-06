@@ -9,7 +9,7 @@ export default function LoginForm() {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
-    remember: true,
+    remember: false,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
@@ -36,8 +36,12 @@ export default function LoginForm() {
     setError(null);
 
     try {
-      await login(formData.email.trim(), formData.password, formData.remember);
-      navigate("/dashboard", { replace: true });
+      const { redirectTo } = await login(
+        formData.email.trim(),
+        formData.password,
+        formData.remember,
+      );
+      navigate(redirectTo, { replace: true });
     } catch (err) {
       if (err.status === 401) {
         setError({
@@ -114,16 +118,19 @@ export default function LoginForm() {
       <form onSubmit={handleSubmit} className="relative z-10 mt-5 space-y-4">
         {/* Email */}
         <div className="animate-item delay-300">
-          <label className="mb-1.5 block text-sm font-bold text-gray-800">
+          <label htmlFor="login-email" className="mb-1.5 block text-sm font-bold text-gray-800">
             Email Madrasah / Kemenag <span className="text-red-500">*</span>
           </label>
           <div className="relative">
             <input
+              id="login-email"
               type="email"
               name="email"
               value={formData.email}
               onChange={handleChange}
               placeholder="admin@mtsalmaarif.sch.id atau nama@kemenag.go.id"
+              autoComplete="username"
+              required
               className={`w-full rounded-lg border bg-white py-2.5 px-4 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 ${
                 error?.field === "email"
                   ? "border-red-400 focus:border-red-500 focus:ring-red-500"
@@ -136,7 +143,7 @@ export default function LoginForm() {
         {/* Password */}
         <div className="animate-item delay-300">
           <div className="mb-1.5 flex items-center justify-between">
-            <label className="block text-sm font-bold text-gray-800">
+            <label htmlFor="login-password" className="block text-sm font-bold text-gray-800">
               Kata Sandi <span className="text-red-500">*</span>
             </label>
             <Link to="/forgot-password" className="text-xs font-semibold text-emerald-700 hover:underline">
@@ -145,11 +152,14 @@ export default function LoginForm() {
           </div>
           <div className="relative">
             <input
+              id="login-password"
               type={showPassword ? "text" : "password"}
               name="password"
               value={formData.password}
               onChange={handleChange}
               placeholder="Masukkan kata sandi"
+              autoComplete="current-password"
+              required
               className={`w-full rounded-lg border bg-white py-2.5 pl-4 pr-10 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-1 ${
                 error?.field === "password"
                   ? "border-red-400 focus:border-red-500 focus:ring-red-500"
