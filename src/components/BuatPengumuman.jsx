@@ -4,6 +4,7 @@ import Sidebar from "./dashboard/Sidebar";
 import Topbar from "./dashboard/Topbar";
 import ModalTerbitkan from "./ModalTerbitkan";
 import Toast from "./Toast";
+import { createAnnouncement } from "../services/announcementService";
 
 // ============ DATA FORM ============
 const jenisPengumuman = [
@@ -44,31 +45,35 @@ export default function BuatPengumuman() {
     type: "success",
   });
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     setIsPublishing(true);
-    setTimeout(() => {
-      setIsPublishing(false);
-      setShowConfirmModal(false);
-      setFormData({
-        jenis: "penting",
-        judul: "",
-        tanggal: "2026-10-23",
-        target: "semua",
-        prioritas: "penting",
-        deskripsi: "",
-      });
 
+    try {
+      await createAnnouncement(formData);
+      setShowConfirmModal(false);
       setToast({
         open: true,
-        title: "Pengumuman Berhasil Diterbitkan!",
-        message: "Pengumuman telah dikirim ke audiens yang dipilih.",
+        title: "Pengumuman berhasil diterbitkan",
+        message: "Pengumuman telah disimpan.",
         type: "success",
       });
 
-      setTimeout(() => {
-        navigate("/kalender");
-      }, 1500);
-    }, 800);
+      setTimeout(() => navigate("/kalender"), 1200);
+    } catch (error) {
+      const fieldErrors = error.errors
+        ? Object.values(error.errors).join(" ")
+        : "";
+
+      setShowConfirmModal(false);
+      setToast({
+        open: true,
+        title: "Pengumuman gagal diterbitkan",
+        message: fieldErrors || error.message || "Terjadi kesalahan.",
+        type: "error",
+      });
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   return (
@@ -125,6 +130,21 @@ export default function BuatPengumuman() {
                 className="mt-4 space-y-4"
                 onSubmit={(e) => {
                   e.preventDefault();
+
+                  if (
+                    !formData.judul.trim() ||
+                    !formData.deskripsi.trim() ||
+                    !formData.tanggal
+                  ) {
+                    setToast({
+                      open: true,
+                      title: "Form belum lengkap",
+                      message: "Judul, tanggal, dan deskripsi wajib diisi.",
+                      type: "error",
+                    });
+                    return;
+                  }
+
                   setShowConfirmModal(true);
                 }}
               >

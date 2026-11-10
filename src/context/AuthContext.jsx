@@ -23,7 +23,7 @@ export function AuthProvider({ children }) {
   }, [setCurrentUser]);
 
   const updateProfile = useCallback(async (profile) => {
-    const data = await api("/api/auth/me", {
+    const data = await api("/auth/profile", {
       method: "PATCH",
       body: profile,
     });

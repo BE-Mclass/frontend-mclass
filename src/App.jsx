@@ -49,7 +49,7 @@ export default function App() {
           <Route path="/forgot-password" element={<AuthLayout><ForgotPasswordForm /></AuthLayout>} />
 
           {/* Dashboard & Main Routes */}
-          <Route element={<ProtectedRoute roles={["admin", "teacher"]} />}>
+          <Route element={<ProtectedRoute roles={["admin", "guru"]} />}>
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/rekap-kelas" element={<RekapKelas />} />
             <Route path="/detail-kelas/:kelas" element={<DetailKelas />} />
