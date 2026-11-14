@@ -5,20 +5,59 @@ import ModalGantiFoto from "./ModalGantiFoto";
 import ModalHapusFoto from "./ModalHapusFoto";
 import Toast from "./Toast";
 import { useAuth } from "../context/AuthContext";
+import { resolveBackendUrl } from "../lib/api";
 
 function toProfile(user) {
   return {
     nama: user?.name ?? user?.nama ?? "",
     email: user?.email ?? "",
     role: user?.role ?? "",
+    staffCode: user?.staff_code ?? "AGR-001",
   };
 }
 
-export default function Pengaturan() {
-  const { user, refreshUser, updateProfile } = useAuth();
-  const [profile, setProfile] = useState(() => toProfile(user));
+function getInitials(nameOrEmail) {
+  const raw = (nameOrEmail || "User").trim();
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+  return raw.slice(0, 2).toUpperCase();
+}
 
-  const [fotoProfil, setFotoProfil] = useState(null);
+function formatSessionDate(isoString) {
+  if (!isoString) return "-";
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) return isoString;
+  return date.toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+export default function Pengaturan() {
+  const {
+    user,
+    refreshUser,
+    updateProfile,
+    uploadAvatar,
+    deleteAvatar,
+    fetchSessions,
+  } = useAuth();
+
+  const [profile, setProfile] = useState(() => toProfile(user));
+  const [fotoProfil, setFotoProfil] = useState(() =>
+    resolveBackendUrl(user?.photo_url ?? user?.avatar_url)
+  );
+  const [sessions, setSessions] = useState([]);
+
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
   const [showFotoModal, setShowFotoModal] = useState(false);
   const [showHapusModal, setShowHapusModal] = useState(false);
@@ -35,11 +74,26 @@ export default function Pengaturan() {
   });
 
   useEffect(() => {
+    setProfile(toProfile(user));
+    setFotoProfil(resolveBackendUrl(user?.photo_url ?? user?.avatar_url));
+  }, [user]);
+
+  useEffect(() => {
     let isMounted = true;
 
-    refreshUser()
-      .then((currentUser) => {
-        if (isMounted) setProfile(toProfile(currentUser));
+    Promise.all([
+      refreshUser(),
+      fetchSessions().catch(() => []),
+    ])
+      .then(([currentUser, sessionList]) => {
+        if (!isMounted) return;
+        setProfile(toProfile(currentUser));
+        setFotoProfil(
+          resolveBackendUrl(currentUser?.photo_url ?? currentUser?.avatar_url)
+        );
+        if (Array.isArray(sessionList)) {
+          setSessions(sessionList);
+        }
       })
       .catch((error) => {
         if (isMounted) {
@@ -58,32 +112,68 @@ export default function Pengaturan() {
     return () => {
       isMounted = false;
     };
-  }, [refreshUser]);
+  }, [refreshUser, fetchSessions]);
 
-  const handleSimpanFoto = (newFotoUrl) => {
-    setFotoProfil(newFotoUrl);
-    setShowFotoModal(false);
-    setToast({
-      open: true,
-      title: "Foto Profil Berhasil Disimpan",
-      message: "Foto profil Anda telah diperbarui.",
-      type: "success",
-    });
+  const handleSimpanFoto = async (fileOrDataUrl) => {
+    try {
+      const updatedUser = await uploadAvatar(fileOrDataUrl);
+      const nextUrl = resolveBackendUrl(
+        updatedUser?.photo_url ?? updatedUser?.avatar_url
+      );
+      setFotoProfil(nextUrl);
+      setShowFotoModal(false);
+      setToast({
+        open: true,
+        title: "Foto Profil Berhasil Disimpan",
+        message: "Foto profil Anda telah diperbarui di server.",
+        type: "success",
+      });
+    } catch (error) {
+      setToast({
+        open: true,
+        title: "Gagal Mengunggah Foto Profil",
+        message: error.message || "Terjadi kesalahan saat mengunggah foto.",
+        type: "error",
+      });
+      throw error;
+    }
   };
 
-  const handleHapusFoto = () => {
+  const handleHapusFoto = async () => {
     setIsDeleting(true);
-    setTimeout(() => {
-      setIsDeleting(false);
+    try {
+      const updatedUser = await deleteAvatar();
+      setFotoProfil(
+        resolveBackendUrl(updatedUser?.photo_url ?? updatedUser?.avatar_url)
+      );
       setShowHapusModal(false);
-      setFotoProfil(null);
       setToast({
         open: true,
         title: "Foto Profil Dihapus",
         message: "Avatar default telah berhasil diterapkan.",
         type: "success",
       });
-    }, 800);
+    } catch (error) {
+      setShowHapusModal(false);
+      setToast({
+        open: true,
+        title: "Gagal Menghapus Foto Profil",
+        message:
+          error?.errors?.avatar ||
+          error?.message ||
+          "Gagal menghapus foto profil karena Anda belum memasang foto profil.",
+        type: "error",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleResetChanges = () => {
+    setProfile(toProfile(user));
+    setCurrentPassword("");
+    setNewPassword("");
+    setFieldErrors({});
   };
 
   const handleSimpanPerubahan = async () => {
@@ -91,11 +181,21 @@ export default function Pengaturan() {
     setFieldErrors({});
 
     try {
-      const updatedUser = await updateProfile({
+      const payload = {
         name: profile.nama,
         email: profile.email,
-      });
+      };
+
+      if (newPassword.trim() || currentPassword.trim()) {
+        payload.current_password = currentPassword;
+        payload.new_password = newPassword;
+        payload.new_password_confirmation = newPassword;
+      }
+
+      const updatedUser = await updateProfile(payload);
       setProfile(toProfile(updatedUser));
+      setCurrentPassword("");
+      setNewPassword("");
       setToast({
         open: true,
         title: "Perubahan Berhasil Disimpan",
@@ -103,7 +203,7 @@ export default function Pengaturan() {
         type: "success",
       });
     } catch (error) {
-      if (error.status === 400 && error.errors && typeof error.errors === "object") {
+      if (error.errors && typeof error.errors === "object") {
         setFieldErrors(error.errors);
       }
       setToast({
@@ -118,7 +218,8 @@ export default function Pengaturan() {
   };
 
   const handleProfileChange = (field, value) => {
-    setProfile((currentProfile) => ({ ...currentProfile, [field]: value }));
+    const stateKey = field === "name" ? "nama" : field;
+    setProfile((currentProfile) => ({ ...currentProfile, [stateKey]: value }));
     setFieldErrors((currentErrors) => ({ ...currentErrors, [field]: undefined }));
   };
 
@@ -127,6 +228,8 @@ export default function Pengaturan() {
     const message = Array.isArray(error) ? error[0] : error;
     return typeof message === "string" ? message : null;
   };
+
+  const avatarInitials = getInitials(profile.nama || profile.email);
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -186,7 +289,7 @@ export default function Pengaturan() {
             </h3>
           </div>
 
-          {/* 2-COLUMN LAYOUT - Diubah agar tinggi sejajar */}
+          {/* 2-COLUMN LAYOUT */}
           <div className="animate-item delay-300 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[320px_1fr]">
 
             {/* ==================== LEFT COLUMN ==================== */}
@@ -197,12 +300,12 @@ export default function Pengaturan() {
                   {fotoProfil ? (
                     <img src={fotoProfil} alt="Foto Profil" className="h-full w-full object-cover" />
                   ) : (
-                    "HF"
+                    avatarInitials
                   )}
                 </div>
 
                 <h4 className="mt-3 text-sm font-bold text-gray-900">
-                  {profile.nama}
+                  {profile.nama || "Petugas Madrasah"}
                 </h4>
                 <p className="mt-0.5 flex items-center justify-center gap-1 text-[10px] text-emerald-600">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
@@ -232,7 +335,7 @@ export default function Pengaturan() {
                 </p>
               </div>
 
-              {/* ==== LOG SESI TERAKHIR (Dibuat memanjang dengan flex-1) ==== */}
+              {/* ==== LOG SESI TERAKHIR ==== */}
               <div className="flex flex-1 flex-col rounded-xl border border-gray-200 bg-white p-5 transition-all duration-300 hover:shadow-md">
                 <div className="flex items-center justify-between">
                   <h4 className="text-sm font-bold text-gray-900">
@@ -244,60 +347,103 @@ export default function Pengaturan() {
                 </div>
 
                 <div className="mt-3 flex-1 space-y-3">
-                  <div className="relative rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
-                    <div className="flex items-start gap-2.5">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="10" />
-                          <circle cx="12" cy="12" r="4" />
-                          <line x1="21.17" x2="12" y1="8" y2="8" />
-                          <line x1="3.95" x2="8.54" y1="6.06" y2="14" />
-                          <line x1="10.88" x2="15.46" y1="21.94" y2="14" />
-                        </svg>
+                  {sessions.length > 0 ? (
+                    sessions.slice(0, 3).map((session) => {
+                      const isCurrent = Boolean(session.is_current);
+                      return (
+                        <div
+                          key={session.id}
+                          className={`relative rounded-lg border p-3 ${
+                            isCurrent
+                              ? "border-emerald-200 bg-emerald-50/40"
+                              : "border-gray-100 bg-gray-50/50"
+                          }`}
+                        >
+                          <div className="flex items-start gap-2.5">
+                            <div
+                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                                isCurrent
+                                  ? "bg-emerald-600 text-white"
+                                  : "bg-gray-200 text-gray-600"
+                              }`}
+                            >
+                              {session.device_type === "mobile" ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
+                                  <path d="M12 18h.01" />
+                                </svg>
+                              ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <circle cx="12" cy="12" r="10" />
+                                  <circle cx="12" cy="12" r="4" />
+                                  <line x1="21.17" x2="12" y1="8" y2="8" />
+                                  <line x1="3.95" x2="8.54" y1="6.06" y2="14" />
+                                  <line x1="10.88" x2="15.46" y1="21.94" y2="14" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-bold text-gray-900">
+                                {session.device || "Perangkat Web"}
+                              </p>
+                              <p className="truncate text-[10px] text-gray-500">
+                                {session.platform ||
+                                  (session.ip_address
+                                    ? `IP ${session.ip_address}`
+                                    : "Sesi Portal M-Class")}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2">
+                            <span className="flex items-center gap-1 text-[10px] text-gray-500">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <path d="M12 6v6l4 2" />
+                              </svg>
+                              {isCurrent ? "Sekarang" : formatSessionDate(session.created_at)}
+                            </span>
+                            {isCurrent && (
+                              <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700">
+                                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"></span>
+                                Sesi Aktif Saat Ini
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="relative rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <circle cx="12" cy="12" r="4" />
+                            <line x1="21.17" x2="12" y1="8" y2="8" />
+                            <line x1="3.95" x2="8.54" y1="6.06" y2="14" />
+                            <line x1="10.88" x2="15.46" y1="21.94" y2="14" />
+                          </svg>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-gray-900">Peramban Web Aktif</p>
+                          <p className="text-[10px] text-gray-500">Sesi portal M-Class saat ini</p>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-gray-900">Chrome pada macOS</p>
-                        <p className="text-[10px] text-gray-500">Sesi terakhir perangkat macOS</p>
+                      <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2">
+                        <span className="flex items-center gap-1 text-[10px] text-gray-500">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 6v6l4 2" />
+                          </svg>
+                          Sekarang
+                        </span>
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700">
+                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"></span>
+                          Sesi Aktif Saat Ini
+                        </span>
                       </div>
                     </div>
-                    <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2">
-                      <span className="flex items-center gap-1 text-[10px] text-gray-500">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="10" />
-                          <path d="M12 6v6l4 2" />
-                        </svg>
-                        Sekarang
-                      </span>
-                      <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700">
-                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500"></span>
-                        Sesi Aktif Saat Ini
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="relative rounded-lg border border-gray-100 bg-gray-50/50 p-3">
-                    <div className="flex items-start gap-2.5">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-200 text-gray-600">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <rect width="14" height="20" x="5" y="2" rx="2" ry="2" />
-                          <path d="M12 18h.01" />
-                        </svg>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-gray-900">Aplikasi Android Premium</p>
-                        <p className="text-[10px] text-gray-500">Google Play Store, Android 14</p>
-                      </div>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between border-t border-gray-100 pt-2">
-                      <span className="flex items-center gap-1 text-[10px] text-gray-500">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="10" />
-                          <path d="M12 6v6l4 2" />
-                        </svg>
-                        13 Oct 2025 14:22
-                      </span>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -314,7 +460,7 @@ export default function Pengaturan() {
                     <span className="text-red-500">*</span>
                   </div>
                   <span className="rounded-md border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] font-mono text-gray-600">
-                    ID Petugas: AGR-009
+                    ID Petugas: {profile.staffCode}
                   </span>
                 </div>
                 <p className="mt-0.5 text-[10px] text-gray-500">
@@ -435,17 +581,38 @@ export default function Pengaturan() {
                     </label>
                     <div className="relative">
                       <input
-                        type="password"
+                        type={showCurrentPassword ? "text" : "password"}
+                        value={currentPassword}
+                        onChange={(e) => {
+                          setCurrentPassword(e.target.value);
+                          setFieldErrors((prev) => ({
+                            ...prev,
+                            current_password: undefined,
+                          }));
+                        }}
                         placeholder="••••••••"
-                        className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 pr-9 text-xs text-gray-800 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-colors"
+                        className={`w-full rounded-lg border bg-gray-50 px-3 py-2 pr-9 text-xs text-gray-800 focus:bg-white focus:outline-none focus:ring-1 transition-colors ${
+                          getFieldError("current_password")
+                            ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                            : "border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                        }`}
                       />
-                      <button className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => setShowCurrentPassword((v) => !v)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                      >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
                           <circle cx="12" cy="12" r="3" />
                         </svg>
                       </button>
                     </div>
+                    {getFieldError("current_password") && (
+                      <p className="mt-1 text-[10px] text-red-600">
+                        {getFieldError("current_password")}
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -454,17 +621,38 @@ export default function Pengaturan() {
                     </label>
                     <div className="relative">
                       <input
-                        type="password"
+                        type={showNewPassword ? "text" : "password"}
+                        value={newPassword}
+                        onChange={(e) => {
+                          setNewPassword(e.target.value);
+                          setFieldErrors((prev) => ({
+                            ...prev,
+                            new_password: undefined,
+                          }));
+                        }}
                         placeholder="Kosongkan jika tidak diganti"
-                        className="w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 pr-9 text-xs text-gray-800 placeholder-gray-400 focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-colors"
+                        className={`w-full rounded-lg border bg-gray-50 px-3 py-2 pr-9 text-xs text-gray-800 placeholder-gray-400 focus:bg-white focus:outline-none focus:ring-1 transition-colors ${
+                          getFieldError("new_password")
+                            ? "border-red-400 focus:border-red-500 focus:ring-red-500"
+                            : "border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+                        }`}
                       />
-                      <button className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword((v) => !v)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                      >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
                           <circle cx="12" cy="12" r="3" />
                         </svg>
                       </button>
                     </div>
+                    {getFieldError("new_password") && (
+                      <p className="mt-1 text-[10px] text-red-600">
+                        {getFieldError("new_password")}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -475,10 +663,16 @@ export default function Pengaturan() {
                   Setiap perubahan data dicatat ke dalam audit log keamanan madrasah.
                 </p>
                 <div className="flex items-center gap-2">
-                  <button className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors">
+                  <button
+                    type="button"
+                    onClick={handleResetChanges}
+                    disabled={isLoadingProfile || isSavingProfile}
+                    className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-70"
+                  >
                     Batal
                   </button>
                   <button
+                    type="button"
                     onClick={handleSimpanPerubahan}
                     disabled={isLoadingProfile || isSavingProfile}
                     className="flex items-center gap-1.5 rounded-lg bg-emerald-700 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-emerald-800 hover:shadow-md active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed"
@@ -495,7 +689,12 @@ export default function Pengaturan() {
             isOpen={showFotoModal}
             onClose={() => setShowFotoModal(false)}
             onConfirm={handleSimpanFoto}
-            user={{ nama: profile.nama, avatarSeed: "AF" }}
+            onDeleteCurrent={fotoProfil ? handleHapusFoto : undefined}
+            user={{
+              nama: profile.nama,
+              avatarSeed: avatarInitials,
+              photoUrl: fotoProfil,
+            }}
           />
 
           <ModalHapusFoto
@@ -503,7 +702,12 @@ export default function Pengaturan() {
             onClose={() => setShowHapusModal(false)}
             onConfirm={handleHapusFoto}
             isLoading={isDeleting}
-            user={{ nama: profile.nama, avatarSeed: "AF" }}
+            user={{
+              nama: profile.nama,
+              idPetugas: profile.staffCode,
+              avatarSeed: avatarInitials,
+              photoUrl: fotoProfil,
+            }}
           />
 
           <Toast

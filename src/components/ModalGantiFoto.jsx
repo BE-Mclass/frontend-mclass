@@ -1,8 +1,16 @@
 import { useState, useRef, useEffect } from "react";
 import Toast from "./Toast";
 
-export default function ModalGantiFoto({ isOpen, onClose, onConfirm, user }) {
+export default function ModalGantiFoto({
+  isOpen,
+  onClose,
+  onConfirm,
+  onDeleteCurrent,
+  hasCurrentPhoto,
+  user,
+}) {
   const [preview, setPreview] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [zoom, setZoom] = useState(50);
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef(null);
@@ -19,28 +27,32 @@ export default function ModalGantiFoto({ isOpen, onClose, onConfirm, user }) {
   useEffect(() => {
     if (!isOpen) {
       setPreview(null);
+      setSelectedFile(null);
       setZoom(50);
       setIsSaving(false);
-      setToast({ ...toast, open: false });
+      setToast((prev) => ({ ...prev, open: false }));
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   const userData = user || {
-    nama: "Ust. H. Ahmad Fauzi, S.Pd",
-    idPetugas: "AGM-089",
+    nama: "Petugas Admin",
+    idPetugas: "AGR-001",
     unit: "MTs Al-Ma'arif",
-    avatarSeed: "AH",
+    avatarSeed: "AD",
   };
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
-    if (file) setPreview(URL.createObjectURL(file));
+    if (file) {
+      setSelectedFile(file);
+      setPreview(URL.createObjectURL(file));
+    }
   };
 
-  const handleSave = () => {
-    if (!preview) {
+  const handleSave = async () => {
+    if (!selectedFile && !preview) {
       setToast({
         open: true,
         title: "Foto Belum Dipilih",
@@ -51,22 +63,48 @@ export default function ModalGantiFoto({ isOpen, onClose, onConfirm, user }) {
     }
 
     setIsSaving(true);
-    setTimeout(() => {
-      setIsSaving(false);
+    try {
       if (onConfirm) {
-        onConfirm(preview);
+        await onConfirm(selectedFile ?? preview);
       }
-    }, 800);
+    } catch (error) {
+      setToast({
+        open: true,
+        title: "Gagal Mengunggah Foto",
+        message: error?.message || "Terjadi kesalahan saat mengunggah foto profil.",
+        type: "error",
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleDelete = () => {
-    if (window.confirm("Yakin ingin menghapus foto profil saat ini?")) {
+  const handleDelete = async () => {
+    if (!hasCurrentPhoto && !preview) {
+      setToast({
+        open: true,
+        title: "Gagal Menghapus Foto",
+        message: "Gagal menghapus foto profil karena Anda belum memasang foto profil.",
+        type: "error",
+      });
+      return;
+    }
+
+    if (preview && !hasCurrentPhoto) {
       setPreview(null);
+      setSelectedFile(null);
+      return;
+    }
+
+    if (onDeleteCurrent) {
+      onClose();
+      onDeleteCurrent();
     }
   };
 
   const handleReset = () => {
     setPreview(null);
+    setSelectedFile(null);
     setZoom(50);
   };
 
@@ -94,7 +132,9 @@ export default function ModalGantiFoto({ isOpen, onClose, onConfirm, user }) {
                 Perbarui Foto Profil Admin
               </h2>
               <p className="mt-0.5 text-[11px] text-gray-500">
-                {userData.nama}{userData.idPetugas}{userData.unit}
+                {userData.nama}
+                {userData.idPetugas ? ` • ${userData.idPetugas}` : ""}
+                {userData.unit ? ` • ${userData.unit}` : ""}
               </p>
             </div>
           </div>
@@ -205,7 +245,7 @@ export default function ModalGantiFoto({ isOpen, onClose, onConfirm, user }) {
                 </button>
 
                 <p className="mt-3 text-[9px] text-gray-400">
-                  Format: JPG, PNG, WebP (Maks. 2MB)
+                  Format: JPG, PNG, WebP (Maks. 5MB)
                 </p>
               </div>
 
@@ -220,7 +260,7 @@ export default function ModalGantiFoto({ isOpen, onClose, onConfirm, user }) {
                     <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z" />
                     <circle cx="12" cy="13" r="3" />
                   </svg>
-                  Buka Webcam
+                  Pilih Foto Lain
                 </button>
                 <button
                   type="button"
@@ -236,7 +276,6 @@ export default function ModalGantiFoto({ isOpen, onClose, onConfirm, user }) {
               </div>
             </div>
           </div>
-
         </div>
 
         {/* Footer Actions */}
@@ -246,6 +285,7 @@ export default function ModalGantiFoto({ isOpen, onClose, onConfirm, user }) {
             onClick={handleDelete}
             className="mr-auto flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-red-600 transition hover:bg-red-50"
           >
+            Hapus Foto Saat Ini
           </button>
 
           <div className="flex items-center gap-2">

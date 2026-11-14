@@ -2,6 +2,13 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000
 const TOKEN_KEY = "mclass_token";
 const USER_KEY = "mclass_user";
 
+export function resolveBackendUrl(pathOrUrl) {
+  if (!pathOrUrl || typeof pathOrUrl !== "string") return null;
+  if (/^(https?:|data:|blob:)/i.test(pathOrUrl)) return pathOrUrl;
+  const origin = API_BASE_URL.replace(/\/api\/?$/, "");
+  return `${origin}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+}
+
 export function getAuthToken() {
   return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
 }
@@ -35,18 +42,20 @@ export const tokenStore = {
 };
 
 export class ApiError extends Error {
-  constructor(status, message, errors = null) {
+  constructor(status, message, errors = null, code = null) {
     super(message);
     this.status = status;
     this.errors = errors;
+    this.code = code;
   }
 }
 
 export async function apiFetch(endpoint, options = {}, auth = true) {
   const token = getAuthToken();
   const headers = new Headers(options.headers);
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
 
-  if (!headers.has("Content-Type")) {
+  if (!isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (auth && token) {
@@ -80,9 +89,10 @@ export async function apiFetch(endpoint, options = {}, auth = true) {
 
 export async function api(path, { method = "GET", body, auth = true } = {}) {
   try {
+    const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
     return await apiFetch(path, {
       method,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
     }, auth);
   } catch (error) {
     if (error instanceof ApiError) throw error;
@@ -93,6 +103,7 @@ export async function api(path, { method = "GET", body, auth = true } = {}) {
       error?.status ?? 0,
       error?.message ?? "Terjadi kesalahan.",
       error?.errors ?? null,
+      error?.code ?? null,
     );
   }
 }

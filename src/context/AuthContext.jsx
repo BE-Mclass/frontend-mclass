@@ -30,6 +30,55 @@ export function AuthProvider({ children }) {
     return setCurrentUser(unwrapUser(data));
   }, [setCurrentUser]);
 
+  const uploadAvatar = useCallback(async (fileOrBase64) => {
+    let body;
+    if (typeof File !== "undefined" && fileOrBase64 instanceof File) {
+      const formData = new FormData();
+      formData.append("file", fileOrBase64);
+      body = formData;
+    } else {
+      body = { avatar: fileOrBase64 };
+    }
+
+    const res = await api("/auth/me/avatar", {
+      method: "POST",
+      body,
+    });
+
+    const avatarData = res?.data ?? res;
+    const nextPhotoUrl = avatarData?.photo_url ?? avatarData?.avatar_url ?? null;
+    const current = tokenStore.getUser() ?? {};
+    const updatedUser = {
+      ...current,
+      photo_url: nextPhotoUrl,
+      avatar_url: nextPhotoUrl,
+    };
+    setCurrentUser(updatedUser);
+    return updatedUser;
+  }, [setCurrentUser]);
+
+  const deleteAvatar = useCallback(async () => {
+    await api("/auth/me/avatar", {
+      method: "DELETE",
+    });
+
+    const current = tokenStore.getUser() ?? {};
+    const updatedUser = {
+      ...current,
+      photo_url: null,
+      avatar_url: null,
+    };
+    setCurrentUser(updatedUser);
+    return updatedUser;
+  }, [setCurrentUser]);
+
+  const fetchSessions = useCallback(async () => {
+    const res = await api("/auth/sessions", {
+      method: "GET",
+    });
+    return res?.data ?? [];
+  }, []);
+
   async function login(email, password, remember) {
     const result = await loginWeb(email, password, remember);
     setUser(result.user);
@@ -42,7 +91,18 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, refreshUser, updateProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        logout,
+        refreshUser,
+        updateProfile,
+        uploadAvatar,
+        deleteAvatar,
+        fetchSessions,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
