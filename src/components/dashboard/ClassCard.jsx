@@ -12,7 +12,7 @@ export default function ClassCard({
   const isWarning = percent < 100;
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
+    <div className="flex h-full flex-col rounded-xl border border-gray-200 bg-white p-4">
       <div className="flex items-center justify-between">
         <h4 className="text-base font-bold text-gray-900">{className}</h4>
         <span className={`text-xs font-semibold ${isWarning ? "text-amber-600" : "text-gray-500"}`}>
@@ -60,12 +60,14 @@ export default function ClassCard({
       )}
 
       {/* ⬇️ Tombol Link ke Detail Kelas */}
-      <Link
-        to={`/detail-kelas/${kelasId}`}
-        className="mt-3 block w-full rounded-lg border border-gray-200 bg-white py-2 text-center text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
-      >
-        Lihat Detail Presensi
-      </Link>
+      <div className="mt-3 flex flex-1 items-end">
+        <Link
+          to={`/detail-kelas/${kelasId}`}
+          className="block w-full rounded-lg border border-gray-200 bg-white py-2 text-center text-xs font-semibold text-gray-700 transition hover:bg-gray-50"
+        >
+          Lihat Detail Presensi
+        </Link>
+      </div>
     </div>
   );
 }

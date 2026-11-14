@@ -1,6 +1,6 @@
 export default function Topbar({ onMenuClick }) {
   return (
-    <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-2.5 md:px-6">
+    <header className="sticky top-0 z-30 flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-4 py-2.5 md:px-6">
       {/* Kiri: Logo M-Class + Badge */}
       <div className="flex items-center gap-3">
         {/* ⬇️ TOMBOL SANDWICH (Hanya muncul di layar < lg) */}
@@ -13,12 +13,7 @@ export default function Topbar({ onMenuClick }) {
           </svg>
         </button>
 
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-700">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-            <path d="M6 12v5c3 3 9 3 12 0v-5" />
-          </svg>
-        </div>
+        <img src="/mclass-logo.png" alt="Logo M-Class" className="h-9 w-9 object-contain" />
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-base font-bold text-gray-900">M-Class</h1>
